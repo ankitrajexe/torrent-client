@@ -77,7 +77,7 @@ func (b *bencode_torrent) to_torrent_file() (torrent_file, error) {
 func (i *bencode_info) hash() ([20]byte, error) {
 	var buf bytes.Buffer
 
-	if err := bencode.Marshal(&buf, i); err != nil {
+	if err := bencode.Marshal(&buf, *i); err != nil {
 		return [20]byte{}, err
 	}
 
