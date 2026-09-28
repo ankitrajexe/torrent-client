@@ -15,7 +15,9 @@ func (bf bitfield) has_piece(index int) bool {
 	if byte_index < 0 || byte_index >= len(bf) {
 		return false
 	}
-	return bf[byte_index]>>uint(offset)&1 != 0
+	//return bf[byte_index]>>uint(offset)&1 != 0 //this is wrong, reading the LSB end but it should read MSB end
+	return bf[byte_index]>>uint(7-offset)&1 != 0
+
 }
 
 func (bf bitfield) set_piece(index int) {
