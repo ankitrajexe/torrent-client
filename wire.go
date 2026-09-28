@@ -137,9 +137,9 @@ func read_message(conn net.Conn) (*message, error) {
 
 func format_request(index, begin, length int) *message {
 	payload := make([]byte, 12)
-	binary.LittleEndian.PutUint32(payload[0:4], uint32(index))
-	binary.LittleEndian.PutUint32(payload[4:8], uint32(begin))
-	binary.LittleEndian.PutUint32(payload[8:12], uint32(length))
+	binary.BigEndian.PutUint32(payload[0:4], uint32(index))
+	binary.BigEndian.PutUint32(payload[4:8], uint32(begin))
+	binary.BigEndian.PutUint32(payload[8:12], uint32(length))
 	return &message{
 		id:      msg_request,
 		payload: payload,
