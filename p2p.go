@@ -287,6 +287,19 @@ func (t *torrent_file) download(out_path string) error {
 			done_pieces, len(t.piece_hashes))
 	}
 
+	// sbf is the shared view of the bitfield that seeding goroutines read under
+	// a lock. It starts as a copy of done_bf so peers see already-done pieces.
+	sbf := &shared_bitfield{bf: make(bitfield, len(done_bf))}
+	copy(sbf.bf, done_bf)
+
+	ln, seed_port, err := open_listener()
+	if err != nil {
+		log.Printf("seed: no listener (%v), seeding disabled\n", err)
+	} else {
+		log.Printf("seeding: listening for peers on port %d", seed_port)
+		go start_seed_listener(ln, t, peer_id, sbf, out_path)
+	}
+
 	atomic.StoreInt64(&dl_stats.total_bytes, int64(t.length))
 	done_dash := make(chan struct{})
 	go start_dashboard(done_dash)
@@ -315,6 +328,9 @@ func (t *torrent_file) download(out_path string) error {
 		}
 
 		done_bf.set_piece(result.index)
+		sbf.mu.Lock()
+		sbf.bf.set_piece(result.index)
+		sbf.mu.Unlock()
 		if err := save_resume(resume_path, t.info_hash, done_bf); err != nil {
 			log.Printf("resume: could not save %s: %v\n", resume_path, err)
 		}
@@ -323,6 +339,9 @@ func (t *torrent_file) download(out_path string) error {
 		done_pieces++
 	}
 	close(work_ch)
+	if ln != nil {
+		ln.Close() // unblocks start_seed_listener's Accept loop
+	}
 	close(done_dash)
 	fmt.Printf("\r%-70s\n", "[====================] 100.0% | download complete")
 	fmt.Println() // move cursor to a fresh line below the dashboard
