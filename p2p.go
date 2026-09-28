@@ -5,12 +5,101 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"log"
-	"runtime"
+	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const block_size = 16384
 const max_backlog = 5
+
+// stats holds counters updated atomically by worker goroutines.
+// total_bytes is set once before the download starts and never written again.
+type stats struct {
+	bytes_done   int64
+	active_peers int64
+	total_bytes  int64
+}
+
+var dl_stats stats
+
+// start_dashboard prints a single updating line to the terminal every 500ms.
+// Speed is computed over a rolling ~1.5-second window (3 samples) so it
+// reacts quickly instead of showing a lifetime average.
+// The line is padded to 70 chars before the carriage return so leftover
+// characters from a longer previous render don't bleed through on Windows.
+func start_dashboard(done <-chan struct{}) {
+	type sample struct {
+		t time.Time
+		b int64
+	}
+	var ring [3]sample
+	pos := 0
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-ticker.C:
+			done_bytes := atomic.LoadInt64(&dl_stats.bytes_done)
+			total := atomic.LoadInt64(&dl_stats.total_bytes)
+			peers := atomic.LoadInt64(&dl_stats.active_peers)
+
+			// keep a rolling window; oldest is the slot we're about to overwrite
+			oldest := ring[(pos+1)%3]
+			ring[pos] = sample{now, done_bytes}
+			pos = (pos + 1) % 3
+
+			var speed float64
+			if !oldest.t.IsZero() {
+				dt := now.Sub(oldest.t).Seconds()
+				if dt > 0 {
+					speed = float64(done_bytes-oldest.b) / dt
+				}
+			}
+
+			var pct float64
+			if total > 0 {
+				pct = float64(done_bytes) / float64(total) * 100
+			}
+
+			eta := "??:??"
+			if speed > 0 && total > done_bytes {
+				secs := int(float64(total-done_bytes) / speed)
+				eta = fmt.Sprintf("%d:%02d:%02d", secs/3600, (secs%3600)/60, secs%60)
+			}
+
+			var speed_str string
+			switch {
+			case speed >= 1024*1024:
+				speed_str = fmt.Sprintf("%.1f MB/s", speed/1024/1024)
+			case speed >= 1024:
+				speed_str = fmt.Sprintf("%.1f KB/s", speed/1024)
+			default:
+				speed_str = fmt.Sprintf("%.0f B/s", speed)
+			}
+
+			// 20-char progress bar
+			filled := int(pct / 5)
+			if filled > 20 {
+				filled = 20
+			}
+			bar := strings.Repeat("=", filled) + strings.Repeat("-", 20-filled)
+
+			line := fmt.Sprintf("[%s] %5.1f%% | %9s | ETA %-9s | %d peers",
+				bar, pct, speed_str, eta, peers)
+
+			// pad to a fixed 70 chars so shorter renders don't leave ghost text
+			if len(line) < 70 {
+				line += strings.Repeat(" ", 70-len(line))
+			}
+			fmt.Printf("\r%s", line)
+		}
+	}
+}
 
 type piece_work struct {
 	index  int
@@ -121,6 +210,8 @@ func start_download_worker(p peer, info_hash [20]byte, peer_id [20]byte, work_ch
 		return
 	}
 	defer c.conn.Close()
+	atomic.AddInt64(&dl_stats.active_peers, 1)
+	defer atomic.AddInt64(&dl_stats.active_peers, -1)
 
 	log.Printf("connected to peer %s\n", p)
 
@@ -169,6 +260,10 @@ func (t *torrent_file) download() ([]byte, error) {
 	}
 	log.Printf("got %d peers from tracker\n", len(peers))
 
+	atomic.StoreInt64(&dl_stats.total_bytes, int64(t.length))
+	done_dash := make(chan struct{})
+	go start_dashboard(done_dash)
+
 	work_ch := make(chan *piece_work, len(t.piece_hashes))
 	results_ch := make(chan *piece_result)
 
@@ -190,13 +285,13 @@ func (t *torrent_file) download() ([]byte, error) {
 		begin := result.index * t.piece_length
 		end := begin + len(result.data)
 		copy(buf[begin:end], result.data)
+		atomic.AddInt64(&dl_stats.bytes_done, int64(len(result.data)))
 		done_pieces++
-
-		percent := float64(done_pieces) / float64(len(t.piece_hashes)) * 100
-		num_workers := runtime.NumGoroutine() - 1
-		log.Printf("%.2f%% done — piece %d downloaded, %d peers active\n", percent, result.index, num_workers)
 	}
 	close(work_ch)
+	close(done_dash)
+	fmt.Printf("\r%-70s\n", "[====================] 100.0% | download complete")
+	fmt.Println() // move cursor to a fresh line below the dashboard
 
 	return buf, nil
 }
