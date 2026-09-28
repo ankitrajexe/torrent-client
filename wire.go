@@ -65,7 +65,7 @@ func read_handshake(conn net.Conn) (*handshake, error) {
 		return nil, fmt.Errorf("pstr length is 0")
 	}
 
-	buf := make([]byte, pstr_len+49)
+	buf := make([]byte, pstr_len+48)
 	// 48 = 8 (reserved) + 20 (infohash) + 20 (peer id)
 	if _, err := io.ReadFull(conn, buf); err != nil {
 		return nil, err
