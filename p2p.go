@@ -77,6 +77,7 @@ func (pp *piece_progress) handle_message(c *client) error {
 			return err
 		}
 		pp.downloaded += n
+		pp.backlog-- // one request fulfilled; allow fill_requests to queue another
 	}
 
 	return nil
