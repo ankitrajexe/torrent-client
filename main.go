@@ -20,14 +20,8 @@ func main() {
 		log.Fatalf("could not open torrent file: %v\n", err)
 	}
 
-	data, err := tf.download()
-	if err != nil {
+	if err := tf.download(output_path); err != nil {
 		log.Fatalf("download failed: %v\n", err)
-	}
-
-	err = os.WriteFile(output_path, data, 0644)
-	if err != nil {
-		log.Fatalf("could not write output file: %v\n", err)
 	}
 
 	fmt.Printf("downloaded %s to %s\n", tf.name, output_path)

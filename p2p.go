@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -246,19 +247,45 @@ func start_download_worker(p peer, info_hash [20]byte, peer_id [20]byte, work_ch
 	}
 }
 
-func (t *torrent_file) download() ([]byte, error) {
+func (t *torrent_file) download(out_path string) error {
 	log.Println("starting download for", t.name)
 
 	peer_id, err := new_peer_id()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	peers, err := t.request_peers(peer_id, 6881)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	log.Printf("got %d peers from tracker\n", len(peers))
+
+	// open or create the output file; pieces are written in place via WriteAt
+	out_file, err := os.OpenFile(out_path, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	defer out_file.Close()
+
+	// pre-allocate on a brand-new file so WriteAt has somewhere to land
+	info, err := out_file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() == 0 {
+		if err := out_file.Truncate(int64(t.length)); err != nil {
+			return err
+		}
+	}
+
+	resume_path := out_path + ".resume"
+	done_bf := load_resume(resume_path, t.info_hash, len(t.piece_hashes))
+	done_bf, done_pieces := verify_resume(out_file, t, done_bf)
+	if done_pieces > 0 {
+		log.Printf("resume: %d/%d pieces already verified, skipping them\n",
+			done_pieces, len(t.piece_hashes))
+	}
 
 	atomic.StoreInt64(&dl_stats.total_bytes, int64(t.length))
 	done_dash := make(chan struct{})
@@ -268,6 +295,9 @@ func (t *torrent_file) download() ([]byte, error) {
 	results_ch := make(chan *piece_result)
 
 	for index, hash := range t.piece_hashes {
+		if done_bf.has_piece(index) {
+			continue // already verified on disk, skip it
+		}
 		length := t.piece_length_at(index)
 		work_ch <- &piece_work{index, hash, length}
 	}
@@ -276,15 +306,19 @@ func (t *torrent_file) download() ([]byte, error) {
 		go start_download_worker(p, t.info_hash, peer_id, work_ch, results_ch)
 	}
 
-	buf := make([]byte, t.length)
-	done_pieces := 0
-
 	for done_pieces < len(t.piece_hashes) {
 		result := <-results_ch
 
-		begin := result.index * t.piece_length
-		end := begin + len(result.data)
-		copy(buf[begin:end], result.data)
+		begin := int64(result.index) * int64(t.piece_length)
+		if _, err := out_file.WriteAt(result.data, begin); err != nil {
+			return fmt.Errorf("write piece %d: %w", result.index, err)
+		}
+
+		done_bf.set_piece(result.index)
+		if err := save_resume(resume_path, t.info_hash, done_bf); err != nil {
+			log.Printf("resume: could not save %s: %v\n", resume_path, err)
+		}
+
 		atomic.AddInt64(&dl_stats.bytes_done, int64(len(result.data)))
 		done_pieces++
 	}
@@ -293,7 +327,7 @@ func (t *torrent_file) download() ([]byte, error) {
 	fmt.Printf("\r%-70s\n", "[====================] 100.0% | download complete")
 	fmt.Println() // move cursor to a fresh line below the dashboard
 
-	return buf, nil
+	return nil
 }
 
 func (t *torrent_file) piece_length_at(index int) int {
