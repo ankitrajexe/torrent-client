@@ -51,3 +51,16 @@ go build -o torrent-client .
 ./torrent-client sample.torrent output.bin
 
 ```
+
+## AI Usage Disclosure
+
+We used AI tools (Anthropic Claude for debugging guidance and planning, Google Antigravity/Gemini for writing code) throughout this project, as allowed under Rule 06.
+
+**How we used it:**
+- Debugging: Claude helped us understand where to look for bugs (opcode/protocol logic, timing, wire format) based on the symptoms we saw when testing. We ran every test ourselves and verified each fix by re-running the client against real torrents and checking file hashes against official checksums.
+- Feature implementation: Antigravity (Gemini) wrote the initial code for the live dashboard, resume support, and seeding, based on requirements and design decisions (e.g. mutex strategy for shared bitfield state, re-verification on resume) that we specified in the prompts. We reviewed every diff before accepting it.
+- We did not use AI to write the demo video, and every commit was made from this machine by a registered team member.
+
+**What we can explain:** every bug fix, the resume file format, the shared-bitfield locking strategy, and the wire protocol changes are documented in BUGS.md and we're prepared to walk through any part of the code during technical defense.
+
+We confirmed with organizers that this level of AI use is acceptable as long as we can explain and defend the code, which we can.
