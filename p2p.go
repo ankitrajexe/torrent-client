@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -339,12 +341,19 @@ func (t *torrent_file) download(out_path string) error {
 		done_pieces++
 	}
 	close(work_ch)
-	if ln != nil {
-		ln.Close() // unblocks start_seed_listener's Accept loop
-	}
 	close(done_dash)
 	fmt.Printf("\r%-70s\n", "[====================] 100.0% | download complete")
 	fmt.Println() // move cursor to a fresh line below the dashboard
+
+	if ln != nil {
+		// keep seeding until the user hits Ctrl+C
+		fmt.Println("download complete, seeding until Ctrl+C")
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		<-quit
+		ln.Close() // unblocks start_seed_listener's Accept loop
+		fmt.Println()
+	}
 
 	return nil
 }
