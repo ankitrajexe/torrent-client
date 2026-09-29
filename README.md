@@ -2,15 +2,15 @@
 
 A concurrent BitTorrent client written in Go implementing the core BitTorrent Peer Protocol (BEP 0003).
 
-> **Note to Participants:**
-> This codebase is intentionally incomplete and contains implementation defects. Please consult the **Problem Statement** document for your submission guidelines and evaluation criteria.
+## Features
 
-## Features (Baseline Framework)
+* `.torrent` metainfo parsing via `bencode-go`, HTTP tracker announce
+* Concurrent piece downloading across multiple peers (worker goroutines + channels), block pipelining, SHA-1 piece verification
+* **Live terminal dashboard** — real-time download speed, ETA, active peers, progress bar
+* **Download resume** — pieces already verified on disk are re-hashed and skipped on restart, only missing pieces are re-requested
+* **Seeding** — after download completes, the client keeps a TCP listener open and serves verified pieces to incoming peers (handshake validation, bitfield exchange, request/piece handling)
 
-* `.torrent` metainfo file parsing via `bencode-go`
-* HTTP Tracker Announce client
-* Concurrent piece downloading across multiple peers using worker goroutines and channels
-* Block pipelining 16 KB chunk requests and SHA-1 piece verification
+All bugs found in the original scaffold and their fixes are documented in [BUGS.md](./BUGS.md).
 
 ## BitTorrent Protocol Overview
 
@@ -57,7 +57,7 @@ go build -o torrent-client .
 We used AI tools (Anthropic Claude for debugging guidance and planning, Google Antigravity/Gemini for writing code) throughout this project, as allowed under Rule 06.
 
 **How we used it:**
-- Debugging: Claude helped us understand where to look for bugs (opcode/protocol logic, timing, wire format) based on the symptoms we saw when testing. We ran every test ourselves and verified each fix by re-running the client against real torrents and checking file hashes against official checksums.
+- - Debugging: Claude helped us understand where to look for bugs (info-hash generation, wire protocol serialization, bitfield bit order, backlog flow control) based on the symptoms we saw when testing.
 - Feature implementation: Antigravity (Gemini) wrote the initial code for the live dashboard, resume support, and seeding, based on requirements and design decisions (e.g. mutex strategy for shared bitfield state, re-verification on resume) that we specified in the prompts. We reviewed every diff before accepting it.
 - We did not use AI to write the demo video, and every commit was made from this machine by a registered team member.
 
