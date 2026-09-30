@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 const block_size = 16384
@@ -249,7 +251,7 @@ func start_download_worker(p peer, info_hash [20]byte, peer_id [20]byte, work_ch
 	}
 }
 
-func (t *torrent_file) download(out_path string) error {
+func (t *torrent_file) download(out_path string, ul_lim *rate.Limiter) error {
 	log.Println("starting download for", t.name)
 
 	peer_id, err := new_peer_id()
@@ -299,7 +301,7 @@ func (t *torrent_file) download(out_path string) error {
 		log.Printf("seed: no listener (%v), seeding disabled\n", err)
 	} else {
 		log.Printf("seeding: listening for peers on port %d", seed_port)
-		go start_seed_listener(ln, t, peer_id, sbf, out_path)
+		go start_seed_listener(ln, t, peer_id, sbf, out_path, ul_lim)
 	}
 
 	atomic.StoreInt64(&dl_stats.total_bytes, int64(t.length))

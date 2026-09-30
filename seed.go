@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // shared_bitfield wraps the done bitfield with a read/write mutex.
@@ -70,7 +73,7 @@ func parse_request(msg *message) (index, begin, length int, err error) {
 //
 // It opens its own read-only file handle so it is completely independent
 // of the download goroutine's handle — no file-level locking needed.
-func handle_upload_conn(conn net.Conn, tf *torrent_file, peer_id [20]byte, sbf *shared_bitfield, out_path string) {
+func handle_upload_conn(conn net.Conn, tf *torrent_file, peer_id [20]byte, sbf *shared_bitfield, out_path string, ul_lim *rate.Limiter) {
 	defer conn.Close()
 	addr := conn.RemoteAddr()
 
@@ -168,6 +171,15 @@ func handle_upload_conn(conn net.Conn, tf *torrent_file, peer_id [20]byte, sbf *
 				return
 			}
 
+			// Throttle: wait until the shared bucket has enough tokens for
+			// this block.  ul_lim is nil when -max-speed is not set.
+			if ul_lim != nil {
+				if err := ul_lim.WaitN(context.Background(), len(buf)); err != nil {
+					log.Printf("seed %s: rate limiter: %v\n", addr, err)
+					return
+				}
+			}
+
 			piece_msg := format_piece(index, begin, buf)
 			if _, err := conn.Write(piece_msg.serialize()); err != nil {
 				log.Printf("seed %s: piece write error: %v\n", addr, err)
@@ -185,12 +197,12 @@ func handle_upload_conn(conn net.Conn, tf *torrent_file, peer_id [20]byte, sbf *
 
 // start_seed_listener accepts connections in a loop and hands each off to
 // its own goroutine. Returns when ln is closed (after download finishes).
-func start_seed_listener(ln net.Listener, tf *torrent_file, peer_id [20]byte, sbf *shared_bitfield, out_path string) {
+func start_seed_listener(ln net.Listener, tf *torrent_file, peer_id [20]byte, sbf *shared_bitfield, out_path string, ul_lim *rate.Limiter) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			return // listener closed, exit cleanly
 		}
-		go handle_upload_conn(conn, tf, peer_id, sbf, out_path)
+		go handle_upload_conn(conn, tf, peer_id, sbf, out_path, ul_lim)
 	}
 }
