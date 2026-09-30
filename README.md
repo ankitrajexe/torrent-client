@@ -9,6 +9,7 @@ A concurrent BitTorrent client written in Go implementing the core BitTorrent Pe
 * **Live terminal dashboard** — real-time download speed, ETA, active peers, progress bar
 * **Download resume** — pieces already verified on disk are re-hashed and skipped on restart, only missing pieces are re-requested
 * **Seeding** — after download completes, the client keeps a TCP listener open and serves verified pieces to incoming peers (handshake validation, bitfield exchange, request/piece handling)
+* **Bandwidth rate limiting** — `-max-speed` flag caps outgoing upload bandwidth (KB/s) using a shared token bucket across all peer connections
 
 All bugs found in the original scaffold and their fixes are documented in [BUGS.md](./BUGS.md).
 
@@ -31,25 +32,26 @@ All bugs found in the original scaffold and their fixes are documented in [BUGS.
 ```bash
 git clone https://github.com/TatHack-Tathva/torrent-client.git
 cd torrent-client
-
 ```
 
 2. **Download dependencies:**
 ```bash
 go mod download
-
 ```
 
 3. **Build the binary:**
 ```bash
 go build -o torrent-client .
-
 ```
 
 4. **Run against a sample torrent file:**
 ```bash
 ./torrent-client sample.torrent output.bin
+```
 
+5. **Run with upload bandwidth capped (optional):**
+```bash
+./torrent-client -max-speed 500 sample.torrent output.bin
 ```
 
 ## AI Usage Disclosure
@@ -57,8 +59,8 @@ go build -o torrent-client .
 We used AI tools (Anthropic Claude for debugging guidance and planning, Google Antigravity/Gemini for writing code) throughout this project, as allowed under Rule 06.
 
 **How we used it:**
-- - Debugging: Claude helped us understand where to look for bugs (info-hash generation, wire protocol serialization, bitfield bit order, backlog flow control) based on the symptoms we saw when testing.
-- Feature implementation: Antigravity (Gemini) wrote the initial code for the live dashboard, resume support, and seeding, based on requirements and design decisions (e.g. mutex strategy for shared bitfield state, re-verification on resume) that we specified in the prompts. We reviewed every diff before accepting it.
+- Debugging: Claude helped us understand where to look for bugs (info-hash generation, wire protocol serialization, bitfield bit order, backlog flow control) based on the symptoms we saw when testing.
+- Feature implementation: Antigravity (Gemini) wrote the initial code for the live dashboard, resume support, seeding, and rate limiting, based on requirements and design decisions (e.g. mutex strategy for shared bitfield state, re-verification on resume) that we specified in the prompts. We reviewed every diff before accepting it.
 - We did not use AI to write the demo video, and every commit was made from this machine by a registered team member.
 
 **What we can explain:** every bug fix, the resume file format, the shared-bitfield locking strategy, and the wire protocol changes are documented in BUGS.md and we're prepared to walk through any part of the code during technical defense.
