@@ -30,7 +30,7 @@ All bugs found in the original scaffold and their fixes are documented in [BUGS.
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/TatHack-Tathva/torrent-client.git
+git clone https://github.com/ankitrajexe/torrent-client.git
 cd torrent-client
 ```
 
